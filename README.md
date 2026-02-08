@@ -11,17 +11,21 @@ This repository is a simple KiCad plugin GUI wrapper.
 git clone https://github.com/dzid26/JLC2KiCad_lib_gui.git
 ```
 
-3. Install the core library into KiCad's Python:
+3. Launch Kicad and PCB Editor
+On first launch you will be asked to install JLC2KiCadLib in KiCad's Python environment.
 
-```bash
-"c:/Program Files/KiCad/9.0/bin/python.exe" -m pip install JLC2KiCadLib
-```
 
-4. In KiCad, run `Tools -> External Plugins -> Refresh Plugins`.
+4. In KiCad PCB Editor, click `Tools -> External Plugins -> Refresh Plugins`.
 
-## Update
 
-When updating the plugin repo:
+## Upgrade JLC2KiCad library
+
+In-app update:
+
+- Open the plugin dialog and click `Check for updates`.
+
+
+If needed, you can install/update manually, e.g.:
 
 ```bash
 git pull

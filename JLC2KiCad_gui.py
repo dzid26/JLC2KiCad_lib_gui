@@ -9,9 +9,12 @@ import pcbnew
 import requests
 import wx
 
-from JLC2KiCadLib import helper
-from JLC2KiCadLib.footprint.footprint import create_footprint
-from JLC2KiCadLib.symbol.symbol import create_symbol
+from .core_library_installer import (
+    REPO_URL,
+    get_core_version,
+    get_latest_core_version,
+    install_or_upgrade_core,
+)
 
 
 OUTPUT_FOLDER = "JLC2KiCad_lib"
@@ -21,6 +24,79 @@ SYMBOL_LIB = "default_lib"
 SYMBOL_LIB_DIR = "symbol"
 
 
+helper = None
+create_footprint = None
+create_symbol = None
+
+
+def _core_version_text():
+    version = get_core_version()
+    return (
+        f"JLC2KiCad library v{version}"
+        if version
+        else "JLC2KiCad library not installed"
+    )
+
+
+def _load_gui_core_library():
+    global helper, create_footprint, create_symbol
+
+    if helper and create_footprint and create_symbol:
+        return
+
+    from JLC2KiCadLib import helper as _helper
+    from JLC2KiCadLib.footprint.footprint import create_footprint as _create_footprint
+    from JLC2KiCadLib.symbol.symbol import create_symbol as _create_symbol
+
+    helper = _helper
+    create_footprint = _create_footprint
+    create_symbol = _create_symbol
+
+
+def _check_gui_core_library(parent=None):
+    global helper, create_footprint, create_symbol
+
+    try:
+        _load_gui_core_library()
+        return True
+    except ModuleNotFoundError:
+        answer = wx.MessageBox(
+            "JLC2KiCad library is missing.\n\nInstall it now?",
+            "JLC2KiCad Missing Dependency",
+            wx.YES_NO | wx.ICON_QUESTION,
+            parent=parent,
+        )
+        if answer == wx.YES:
+            if install_or_upgrade_core(prompt_reason="missing", prompt_user=False):
+                helper = None
+                create_footprint = None
+                create_symbol = None
+                try:
+                    _load_gui_core_library()
+                    return True
+                except Exception:
+                    pass
+
+        wx.MessageBox(
+            "JLC2KiCad library is required to run this plugin.\n"
+            "See README.md for installation steps.\n"
+            f"Repository: {REPO_URL}",
+            "JLC2KiCad Missing Dependency",
+            wx.OK | wx.ICON_ERROR,
+            parent=parent,
+        )
+        return False
+    except Exception as exc:
+        wx.MessageBox(
+            "Failed to load JLC2KiCad library.\n"
+            f"Error: {type(exc).__name__}: {exc}",
+            "JLC2KiCad Error",
+            wx.OK | wx.ICON_ERROR,
+            parent=parent,
+        )
+        return False
+
+
 class MyCustomDialog(wx.Dialog):
     def __init__(self, parent, title, message, caption):
         super(MyCustomDialog, self).__init__(parent, title=title, style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
@@ -28,30 +104,41 @@ class MyCustomDialog(wx.Dialog):
         # Create a sizer to manage the layout
         sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # Add a message label
-        sizer.Add(wx.StaticText(self, label=message), 0, wx.ALL, 10)
+        # Header row: part label on the left, update action on the right.
+        header_row = wx.BoxSizer(wx.HORIZONTAL)
+        header_row.Add(wx.StaticText(self, label=message), 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 10)
+        header_row.AddStretchSpacer(1)
+        self.core_version_label = wx.StaticText(self, label=_core_version_text())
+        header_row.Add(self.core_version_label, 0, wx.RIGHT | wx.ALIGN_CENTER_VERTICAL, 8)
+        self.update_button = wx.Button(self, wx.ID_ANY, "Check for updates")
+        header_row.Add(self.update_button, 0, wx.RIGHT | wx.ALIGN_CENTER_VERTICAL, 10)
+        sizer.Add(header_row, 0, wx.EXPAND, 0)
 
         # Add a text entry field
         self.text_entry = wx.TextCtrl(self, style=wx.TE_PROCESS_ENTER)
         sizer.Add(self.text_entry, 0, wx.ALL | wx.EXPAND, 10)
 
-        # Add custom buttons
-        box = wx.StdDialogButtonSizer()
-        
-        box.AddButton(wx.Button(self, wx.ID_APPLY, "Download to project library"))
-        ok_button = wx.Button(self, wx.ID_OK, "Copy to clipboard")
-        box.AddButton(ok_button)
-        box.AddButton(wx.Button(self, wx.ID_CANCEL, "Cancel"))
-        box.AddButton(wx.Button(self, wx.ID_HELP, "Help"))
-        
-        box.Realize()
+        # Add custom buttons, right-aligned.
+        button_row = wx.BoxSizer(wx.HORIZONTAL)
+        button_row.AddStretchSpacer(1)
 
-        sizer.Add(box, 0, wx.ALL | wx.EXPAND, 10)
+        ok_button = wx.Button(self, wx.ID_OK, "Copy to clipboard")
+        download_button = wx.Button(self, wx.ID_APPLY, "Download to project library")
+        cancel_button = wx.Button(self, wx.ID_CANCEL, "Cancel")
+        help_button = wx.Button(self, wx.ID_HELP, "Help")
+
+        button_row.Add(ok_button, 0, wx.LEFT, 6)
+        button_row.Add(download_button, 0, wx.LEFT, 6)
+        button_row.Add(cancel_button, 0, wx.LEFT, 6)
+        button_row.Add(help_button, 0, wx.LEFT, 6)
+
+        sizer.Add(button_row, 0, wx.ALL | wx.EXPAND, 10)
 
         self.SetSizer(sizer)
         self.Fit()
 
         self.Bind(wx.EVT_BUTTON, self.OnDownload, id=wx.ID_APPLY)
+        self.Bind(wx.EVT_BUTTON, self.OnUpdateCoreLibrary, id=self.update_button.GetId())
         self.Bind(wx.EVT_BUTTON, self.OnPlaceFootprint, id=wx.ID_OK)
         self.Bind(wx.EVT_BUTTON, self.OnCancel, id=wx.ID_CANCEL)
         self.Bind(wx.EVT_BUTTON, self.OnHelp, id=wx.ID_HELP)
@@ -82,8 +169,31 @@ class MyCustomDialog(wx.Dialog):
     def OnCancel(self, event):
         self.EndModal(wx.ID_CANCEL)
 
+    def OnUpdateCoreLibrary(self, event):
+        current_version = get_core_version()
+        latest_version = get_latest_core_version()
+        if current_version and latest_version and current_version == latest_version:
+            wx.MessageBox(
+                f"JLC2KiCad library is already up to date (v{current_version}).",
+                "JLC2KiCad",
+                wx.OK | wx.ICON_INFORMATION,
+            )
+            return
+
+        if install_or_upgrade_core(prompt_reason="update"):
+            new_version = get_core_version()
+            self.core_version_label.SetLabel(_core_version_text())
+            self.Layout()
+
+            global helper, create_footprint, create_symbol
+            helper = None
+            create_footprint = None
+            create_symbol = None
+            if current_version != new_version:
+                self.EndModal(wx.ID_CANCEL)
+
     def OnHelp(self, event):
-        wx.MessageBox("Test button download footprint to temporary folder and then pastes to the PCB. If paste didn't work, press Ctrl+V.\nDownloading to project uses JLC2KiCad_lib library folder in the project path", "Help", wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox("Test button download footprint to temporary folder and copies to clipboard, press Ctrl+V to paste.\nDownloading to project uses JLC2KiCad_lib library folder in the project path", "Help", wx.OK | wx.ICON_INFORMATION)
 
 
 def download_part(component_id, out_dir, get_symbol=False, skip_existing=False):
@@ -133,7 +243,7 @@ def download_part(component_id, out_dir, get_symbol=False, skip_existing=False):
 
 class JLC2KiCad_GUI(pcbnew.ActionPlugin):
     def defaults(self):
-        self.name = "Downlaod JLC part"
+        self.name = "Download JLC part"
         self.category = "Modify PCB"
         self.description = "A description of the plugin and what it does"
         self.show_toolbar_button = True
@@ -196,6 +306,8 @@ class JLC2KiCad_GUI(pcbnew.ActionPlugin):
 
     def Run(self):
         board: pcbnew.BOARD = pcbnew.GetBoard()
+        if not _check_gui_core_library():
+            return
 
         if self._pcbnew_frame is None:
             try:
