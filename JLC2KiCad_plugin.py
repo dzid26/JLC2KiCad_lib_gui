@@ -8,6 +8,7 @@ import tempfile
 import requests
 import json
 
+from .JLC2KiCadLib import helper
 from .JLC2KiCadLib.footprint.footprint import create_footprint
 from .JLC2KiCadLib.symbol.symbol import create_symbol
 
@@ -88,7 +89,8 @@ def download_part(component_id, out_dir, get_symbol=False, skip_existing=False):
     logging.info(f"creating library for component {component_id}")
     data = json.loads(
         requests.get(
-            f"https://easyeda.com/api/products/{component_id}/svgs"
+            f"https://easyeda.com/api/products/{component_id}/svgs",
+            headers={"User-Agent": helper.get_user_agent()},
         ).content.decode()
     )
 
