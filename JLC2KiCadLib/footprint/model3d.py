@@ -1,8 +1,11 @@
-import requests
 import logging
 import os
 import re
+
+import requests
 from KicadModTree import Model
+
+from .. import helper
 
 wrl_header = """#VRML V2.0 utf8
 #created by JLC2KiCad_lib using the JLCPCB library
@@ -23,22 +26,28 @@ def get_StepModel(
     translationZ,
     rotation,
 ):
-    logging.info(f"Downloading STEP Model ...")
+    logging.info("Downloading STEP Model ...")
 
     # `qAxj6KHrDKw4blvCG8QJPs7Y` is a constant in
     # https://modules.lceda.cn/smt-gl-engine/0.8.22.6032922c/smt-gl-engine.js
     # and points to the bucket containing the step files.
 
     response = requests.get(
-        f"https://modules.easyeda.com/qAxj6KHrDKw4blvCG8QJPs7Y/{component_uuid}"
+        f"https://modules.easyeda.com/qAxj6KHrDKw4blvCG8QJPs7Y/{component_uuid}",
+        headers={"User-Agent": helper.get_user_agent()},
     )
 
-    if not response.status_code == requests.codes.ok:
+    if response.status_code != requests.codes.ok:
         logging.error("request error, no Step model found")
         return
 
     ensure_footprint_lib_directories_exist(footprint_info)
-    filename = f"{footprint_info.output_dir}/{footprint_info.footprint_lib}/{footprint_info.model_dir}/{footprint_info.footprint_name}.step"
+    filename = (
+        f"{footprint_info.output_dir}/"
+        f"{footprint_info.footprint_lib}/"
+        f"{footprint_info.model_dir}/"
+        f"{footprint_info.footprint_name}.step"
+    )
     with open(filename, "wb") as f:
         f.write(response.content)
 
@@ -46,9 +55,17 @@ def get_StepModel(
 
     if footprint_info.model_base_variable:
         if footprint_info.model_base_variable.startswith("$"):
-            path_name = f'"{footprint_info.model_base_variable}/{footprint_info.model_dir}/{footprint_info.footprint_name}.step"'
+            path_name = (
+                f'"{footprint_info.model_base_variable}/'
+                f"{footprint_info.model_dir}/"
+                f'{footprint_info.footprint_name}.step"'
+            )
         else:
-            path_name = f'"$({footprint_info.model_base_variable})/{footprint_info.model_dir}/{footprint_info.footprint_name}.step"'
+            path_name = (
+                f'"$({footprint_info.model_base_variable})/'
+                f"{footprint_info.model_dir}/"
+                f'{footprint_info.footprint_name}.step"'
+            )
     else:
         path_name = f"{footprint_info.model_dir}/{footprint_info.footprint_name}.step"
 
@@ -78,7 +95,8 @@ def get_WrlModel(
     logging.info("Creating WRL model ...")
 
     response = requests.get(
-        f"https://easyeda.com/analyzer/api/3dmodel/{component_uuid}"
+        f"https://easyeda.com/analyzer/api/3dmodel/{component_uuid}",
+        headers={"User-Agent": helper.get_user_agent()},
     )
     if response.status_code == requests.codes.ok:
         text = response.content.decode()
@@ -151,10 +169,10 @@ def get_WrlModel(
 Shape{{
 	appearance Appearance {{
 		material  Material 	{{ 
-			diffuseColor {' '.join(material['diffuseColor'])} 
-			specularColor {' '.join(material['specularColor'])}
+			diffuseColor {" ".join(material["diffuseColor"])} 
+			specularColor {" ".join(material["specularColor"])}
 			ambientIntensity 0.2
-			transparency {material['transparency']}
+			transparency {material["transparency"]}
 			shininess 0.5
 		}}
 	}}
@@ -176,15 +194,28 @@ Shape{{
 
     ensure_footprint_lib_directories_exist(footprint_info)
 
-    filename = f"{footprint_info.output_dir}/{footprint_info.footprint_lib}/{footprint_info.model_dir}/{footprint_info.footprint_name}.wrl"
+    filename = (
+        f"{footprint_info.output_dir}/"
+        f"{footprint_info.footprint_lib}/"
+        f"{footprint_info.model_dir}/"
+        f"{footprint_info.footprint_name}.wrl"
+    )
     with open(filename, "w") as f:
         f.write(wrl_content)
 
     if footprint_info.model_base_variable:
         if footprint_info.model_base_variable.startswith("$"):
-            path_name = f'"{footprint_info.model_base_variable}/{footprint_info.model_dir}/{footprint_info.footprint_name}.wrl"'
+            path_name = (
+                f'"{footprint_info.model_base_variable}/'
+                f"{footprint_info.model_dir}/"
+                f'{footprint_info.footprint_name}.wrl"'
+            )
         else:
-            path_name = f'"$({footprint_info.model_base_variable})/{footprint_info.model_dir}/{footprint_info.footprint_name}.wrl"'
+            path_name = (
+                f'"$({footprint_info.model_base_variable})/'
+                f"{footprint_info.model_dir}/"
+                f'{footprint_info.footprint_name}.wrl"'
+            )
     else:
         path_name = f"{footprint_info.model_dir}/{footprint_info.footprint_name}.wrl"
 
@@ -194,9 +225,10 @@ Shape{{
 
     # Check if a model has already been added to the footprint to prevent duplicates
     if any(isinstance(child, Model) for child in kicad_mod.getAllChilds()):
-        logging.info(f"WRL model created at {filename}")
+        logging.info("WRL model created at {filename}")
         logging.info(
-            f"WRL model was not added to the footprint to prevent duplicates with STEP model"
+            "WRL model was not added to the footprint to prevent duplicates with STEP "
+            "model"
         )
     else:
         kicad_mod.append(
@@ -206,7 +238,7 @@ Shape{{
                 rotate=[-float(axis_rotation) for axis_rotation in rotation.split(",")],
             )
         )
-        logging.info(f"added {path_name} to footprintc")
+        logging.info(f"added {path_name} to footprint")
 
 
 def ensure_footprint_lib_directories_exist(footprint_info):

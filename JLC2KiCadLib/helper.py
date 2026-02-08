@@ -1,5 +1,15 @@
 import logging
 import sys
+from importlib.metadata import version as pkg_version
+
+
+def get_user_agent():
+    """Get the User-Agent header for API requests to EasyEDA."""
+    try:
+        version = pkg_version("JLC2KiCadLib")
+    except Exception:
+        version = "unknown"
+    return f"JLC2KiCadLib/{version} (https://github.com/TousstNicolas/JLC2KiCad_lib)"
 
 
 def set_logging(logging_level, logging_file):
