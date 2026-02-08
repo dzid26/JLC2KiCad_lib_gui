@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 
@@ -145,6 +146,34 @@ class MyCustomDialog(wx.Dialog):
 
         
         self.SetDefaultItem(ok_button)
+        wx.CallAfter(self._prefill_part_number_from_clipboard)
+
+    @staticmethod
+    def _parse_part_number(text):
+        if not text:
+            return ""
+        match = re.search(r"\bC\d+\b", text)
+        return match.group(0) if match else ""
+
+    @staticmethod
+    def _read_clipboard_text():
+        data = wx.TextDataObject()
+        if not wx.TheClipboard.Open():
+            return ""
+        try:
+            if wx.TheClipboard.GetData(data):
+                return data.GetText()
+        finally:
+            wx.TheClipboard.Close()
+        return ""
+
+    def _prefill_part_number_from_clipboard(self):
+        clipboard_text = self._read_clipboard_text()
+        part_number = self._parse_part_number(clipboard_text)
+        if part_number:
+            self.text_entry.SetValue(part_number)
+            self.text_entry.SelectAll()
+        self.text_entry.SetFocus()
 
 
     def OnDownload(self, event):
